@@ -37,3 +37,29 @@ export interface FEAResult {
   maxStress: number;
   reactionForces: { nodeId: number; fx: number; fy: number }[];
 }
+
+export interface CriticalElement {
+  elementId: number;
+  stress: number;
+  nodeIds: [number, number];
+  rank: number;
+}
+
+export interface PresetComparisonResult {
+  presetName: string;
+  presetLabel: string;
+  model: FEAModel;
+  result: FEAResult | null;
+  solved: boolean;
+  maxStress: number;
+  maxDisplacement: number;
+  criticalElements: CriticalElement[];
+  elementCount: number;
+  nodeCount: number;
+}
+
+export interface ComparisonState {
+  enabled: boolean;
+  results: PresetComparisonResult[];
+  topNCritical: number;
+}
