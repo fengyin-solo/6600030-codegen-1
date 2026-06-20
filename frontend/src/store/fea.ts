@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import type {
   FEAModel,
   FEAResult,
@@ -20,6 +20,68 @@ const PRESET_CONFIGS = [
   { name: 'frame', label: '简单框架', factory: presetSimpleFrame },
 ];
 
+const STORAGE_KEY = 'fea-comparison-state';
+
+interface PersistedComparisonState {
+  comparisonEnabled: boolean;
+  comparisonResults: PresetComparisonResult[];
+  topNCritical: number;
+  version: number;
+}
+
+const STORAGE_VERSION = 1;
+
+function saveComparisonState(
+  enabled: boolean,
+  results: PresetComparisonResult[],
+  topN: number
+) {
+  try {
+    const state: PersistedComparisonState = {
+      comparisonEnabled: enabled,
+      comparisonResults: results,
+      topNCritical: topN,
+      version: STORAGE_VERSION,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.warn('保存对比状态失败:', e);
+  }
+}
+
+function loadComparisonState(): PersistedComparisonState | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedComparisonState;
+    if (parsed.version !== STORAGE_VERSION) return null;
+    return parsed;
+  } catch (e) {
+    console.warn('加载对比状态失败:', e);
+    return null;
+  }
+}
+
+function clearComparisonState() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {
+    console.warn('清除对比状态失败:', e);
+  }
+}
+
+function rebuildModelsForResults(results: PresetComparisonResult[]): PresetComparisonResult[] {
+  return results.map((r) => {
+    const config = PRESET_CONFIGS.find((c) => c.name === r.presetName);
+    const baseModel = config ? config.factory() : r.model;
+    return {
+      ...r,
+      model: baseModel,
+      result: r.solved ? r.result : null,
+    };
+  });
+}
+
 export const useFEAStore = defineStore('fea', () => {
   const model = ref<FEAModel>({ nodes: [], elements: [], loads: [] });
   const result = ref<FEAResult | null>(null);
@@ -28,9 +90,18 @@ export const useFEAStore = defineStore('fea', () => {
   const deformationScale = ref(10);
   const selectedElement = ref<number | null>(null);
   const heatmapMode = ref<'stress' | 'strain' | 'force'>('stress');
-  const comparisonEnabled = ref(false);
-  const comparisonResults = ref<PresetComparisonResult[]>([]);
   const topNCritical = ref(5);
+
+  const persisted = loadComparisonState();
+  const comparisonEnabled = ref(persisted?.comparisonEnabled ?? false);
+  const comparisonResults = ref<PresetComparisonResult[]>(
+    persisted?.comparisonResults && persisted.comparisonResults.length > 0
+      ? rebuildModelsForResults(persisted.comparisonResults)
+      : []
+  );
+  if (persisted?.topNCritical) {
+    topNCritical.value = persisted.topNCritical;
+  }
 
   // ─── Actions ──────────────────────────────────────────────────────────────
   function loadPreset(name: string) {
@@ -116,6 +187,11 @@ export const useFEAStore = defineStore('fea', () => {
         nodeCount: presetModel.nodes.length,
       };
     });
+    saveComparisonState(
+      comparisonEnabled.value,
+      comparisonResults.value,
+      topNCritical.value
+    );
   }
 
   function solveAllPresets() {
@@ -131,13 +207,28 @@ export const useFEAStore = defineStore('fea', () => {
         topNCritical.value
       );
     }
+    saveComparisonState(
+      comparisonEnabled.value,
+      comparisonResults.value,
+      topNCritical.value
+    );
   }
 
   function toggleComparison() {
     comparisonEnabled.value = !comparisonEnabled.value;
     if (comparisonEnabled.value && comparisonResults.value.length === 0) {
-      initComparison();
+      const stored = loadComparisonState();
+      if (stored?.comparisonResults && stored.comparisonResults.length > 0) {
+        comparisonResults.value = rebuildModelsForResults(stored.comparisonResults);
+      } else {
+        initComparison();
+      }
     }
+    saveComparisonState(
+      comparisonEnabled.value,
+      comparisonResults.value,
+      topNCritical.value
+    );
   }
 
   function setTopNCritical(n: number) {
@@ -153,12 +244,31 @@ export const useFEAStore = defineStore('fea', () => {
         }
       }
     }
+    saveComparisonState(
+      comparisonEnabled.value,
+      comparisonResults.value,
+      topNCritical.value
+    );
   }
 
   function loadPresetFromComparison(presetName: string) {
     comparisonEnabled.value = false;
+    saveComparisonState(
+      comparisonEnabled.value,
+      comparisonResults.value,
+      topNCritical.value
+    );
     loadPreset(presetName);
   }
+
+  // ─── Persistence Watchers ─────────────────────────────────────────────────
+  watch(
+    [comparisonEnabled, comparisonResults, topNCritical],
+    ([enabled, results, topN]) => {
+      saveComparisonState(enabled, results, topN);
+    },
+    { deep: true }
+  );
 
   // ─── Computed ─────────────────────────────────────────────────────────────
   const maxStress = computed(() => {
@@ -264,5 +374,6 @@ export const useFEAStore = defineStore('fea', () => {
     setTopNCritical,
     loadPresetFromComparison,
     getCriticalElements,
+    clearComparisonState,
   };
 });

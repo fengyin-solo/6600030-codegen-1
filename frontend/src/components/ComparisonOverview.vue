@@ -62,6 +62,13 @@ function getRankBadgeColor(rank: number): string {
       return 'bg-slate-600 text-white';
   }
 }
+
+function handleResetCache() {
+  if (confirm('确定要清除所有已保存的对比数据吗？')) {
+    store.clearComparisonState();
+    store.initComparison();
+  }
+}
 </script>
 
 <template>
@@ -88,6 +95,15 @@ function getRankBadgeColor(rank: number): string {
         >
           ⚡ 一键求解所有方案
         </button>
+        <button
+          @click="handleResetCache"
+          class="py-2 px-2 rounded text-xs font-bold bg-slate-700 text-slate-300 hover:bg-slate-600 transition"
+          title="清除已保存的对比数据"
+        >
+          🗑 重置
+        </button>
+      </div>
+      <div class="flex items-center gap-2">
         <div class="flex items-center gap-1">
           <span class="text-xs text-slate-400">Top</span>
           <select
@@ -100,6 +116,10 @@ function getRankBadgeColor(rank: number): string {
             <option :value="10">10</option>
           </select>
           <span class="text-xs text-slate-400">危险单元</span>
+        </div>
+        <div v-if="store.allSolved" class="ml-auto flex items-center gap-1">
+          <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+          <span class="text-[10px] text-green-400">数据已持久化</span>
         </div>
       </div>
 
